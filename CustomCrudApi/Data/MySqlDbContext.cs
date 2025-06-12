@@ -3,9 +3,22 @@ using CustomCrudApi.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace CustomCrudApi.Data;
+
+/// <summary>
+/// Entity Framework Core database context for MySQL operations.
+/// </summary>
 public class MySqlDbContext : DbContext
 {
-  public MySqlDbContext(DbContextOptions<MySqlDbContext> opts) : base(opts) { }
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MySqlDbContext"/> class.
+    /// </summary>
+    /// <param name="options">The database context options.</param>
+    public MySqlDbContext(DbContextOptions<MySqlDbContext> options) : base(options)
+    {
+    }
 
-  public DbSet<Book> Books { get; set; } = null!;
+    /// <summary>
+    /// Gets or sets the Books DbSet.
+    /// </summary>
+    public DbSet<Book> Books { get; set; } = null!;
 }
