@@ -1,49 +1,47 @@
 using CustomCrudApi.Models;
 using CustomCrudApi.Services;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.RegularExpressions;
 
 namespace CustomCrudApi.Controllers
 {
     /// <summary>
-    /// Controller for managing book operations with MongoDB.
+    /// Controller for managing book operations with MySQL using raw SQL queries.
     /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/mysql/raw/[controller]")]
     [Produces("application/json")]
-    public class BooksController : ControllerBase
+    public class BookMysqlRawController : ControllerBase
     {
-        private readonly BookService _bookService;
-        private readonly ILogger<BooksController> _logger;
-        private static readonly Regex ObjectIdRegex = new("[0-9a-fA-F]{24}", RegexOptions.Compiled);
+        private readonly BookMysqlRawService _bookMysqlRawService;
+        private readonly ILogger<BookMysqlRawController> _logger;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="BooksController"/> class.
+        /// Initializes a new instance of the <see cref="BookMysqlRawController"/> class.
         /// </summary>
-        /// <param name="bookService">The book service instance.</param>
+        /// <param name="bookMysqlRawService">The book MySQL raw service instance.</param>
         /// <param name="logger">The logger instance.</param>
         /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
-        public BooksController(BookService bookService, ILogger<BooksController> logger)
+        public BookMysqlRawController(BookMysqlRawService bookMysqlRawService, ILogger<BookMysqlRawController> logger)
         {
-            _bookService = bookService ?? throw new ArgumentNullException(nameof(bookService));
+            _bookMysqlRawService = bookMysqlRawService ?? throw new ArgumentNullException(nameof(bookMysqlRawService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }        /// <summary>
-        /// Retrieves all books with optional pagination.
+        /// Retrieves all books from MySQL database with optional pagination.
         /// </summary>
         /// <param name="page">The page number (starting from 1).</param>
         /// <param name="pageSize">The number of items per page (max 100).</param>
-        /// <returns>A list of books.</returns>
+        /// <returns>A collection of books.</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(List<Book>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(IEnumerable<Book>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<Book>>> GetAsync(
+        public async Task<ActionResult<IEnumerable<Book>>> GetAllAsync(
             [FromQuery] int page = 1, 
             [FromQuery] int pageSize = 10)
         {
             try
             {
-                _logger.LogInformation("Getting books with page {Page} and pageSize {PageSize}", page, pageSize);
+                _logger.LogInformation("Getting books from MySQL with page {Page} and pageSize {PageSize}", page, pageSize);
                 
                 // Validate pagination parameters
                 if (page < 1)
@@ -58,24 +56,23 @@ namespace CustomCrudApi.Controllers
                     return BadRequest("Page size must be between 1 and 100.");
                 }
 
-                var books = await _bookService.GetAsync().ConfigureAwait(false);
+                var books = await _bookMysqlRawService.GetAllAsync().ConfigureAwait(false);
                 
                 // Apply pagination
                 var pagedBooks = books
                     .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
+                    .Take(pageSize);
                 
-                _logger.LogInformation("Successfully retrieved {Count} books", pagedBooks.Count);
+                _logger.LogInformation("Successfully retrieved books from MySQL");
                 return Ok(pagedBooks);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while retrieving books");
+                _logger.LogError(ex, "Error occurred while retrieving books from MySQL");
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }        /// <summary>
-        /// Retrieves a book by its identifier.
+        /// Retrieves a book by its identifier from MySQL database.
         /// </summary>
         /// <param name="id">The book identifier.</param>
         /// <returns>The book if found; otherwise, NotFound.</returns>
@@ -92,24 +89,18 @@ namespace CustomCrudApi.Controllers
                 return BadRequest("Book ID cannot be null or empty.");
             }
 
-            if (!ObjectIdRegex.IsMatch(id))
-            {
-                _logger.LogWarning("GetAsync called with invalid id format: {Id}", id);
-                return BadRequest("Invalid id format. Must be a 24-character hex string.");
-            }
-
             try
             {
-                _logger.LogInformation("Getting book with id: {Id}", id);
+                _logger.LogInformation("Getting book from MySQL with id: {Id}", id);
                 
-                var book = await _bookService.GetAsync(id).ConfigureAwait(false);
+                var book = await _bookMysqlRawService.GetByIdAsync(id).ConfigureAwait(false);
                 if (book is null)
                 {
-                    _logger.LogWarning("Book with id {Id} not found", id);
+                    _logger.LogWarning("Book with id {Id} not found in MySQL", id);
                     return NotFound();
                 }
                     
-                _logger.LogInformation("Successfully retrieved book with id: {Id}", id);
+                _logger.LogInformation("Successfully retrieved book from MySQL with id: {Id}", id);
                 return Ok(book);
             }
             catch (ArgumentException ex)
@@ -119,41 +110,41 @@ namespace CustomCrudApi.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while retrieving book with id: {Id}", id);
+                _logger.LogError(ex, "Error occurred while retrieving book from MySQL with id: {Id}", id);
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }        /// <summary>
-        /// Creates a new book.
+        /// Creates a new book in MySQL database.
         /// </summary>
-        /// <param name="newBook">The book to create.</param>
+        /// <param name="book">The book to create.</param>
         /// <returns>A CreatedAtAction result with the created book.</returns>
         [HttpPost]
         [ProducesResponseType(typeof(Book), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> PostAsync([FromBody] Book newBook)
+        public async Task<IActionResult> CreateAsync([FromBody] Book book)
         {
-            if (newBook == null)
+            if (book == null)
             {
-                _logger.LogWarning("PostAsync called with null book");
+                _logger.LogWarning("CreateAsync called with null book");
                 return BadRequest("Book cannot be null.");
             }
 
             if (!ModelState.IsValid)
             {
-                _logger.LogWarning("PostAsync called with invalid model state");
+                _logger.LogWarning("CreateAsync called with invalid model state");
                 return BadRequest(ModelState);
             }
 
             try
             {
-                _logger.LogInformation("Creating new book with title: {Title}", newBook.Title);
+                _logger.LogInformation("Creating new book in MySQL with title: {Title}", book.Title);
                 
-                await _bookService.CreateAsync(newBook).ConfigureAwait(false);
+                var created = await _bookMysqlRawService.CreateAsync(book).ConfigureAwait(false);
                 
-                _logger.LogInformation("Successfully created book with id: {Id}", newBook.Id);
-                return CreatedAtAction("Get", new { id = newBook.Id }, newBook);
+                _logger.LogInformation("Successfully created book in MySQL with id: {Id}", created.Id);
+                return CreatedAtAction("Get", new { id = created.Id }, created);
             }
             catch (ArgumentNullException ex)
             {
@@ -162,21 +153,22 @@ namespace CustomCrudApi.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while creating book");
+                _logger.LogError(ex, "Error occurred while creating book in MySQL");
                 return StatusCode(500, $"Internal server error: {ex.Message}");
-            }
-        }        /// <summary>
-        /// Updates an existing book.
+            }        }
+
+        /// <summary>
+        /// Updates an existing book in MySQL database.
         /// </summary>
         /// <param name="id">The book identifier.</param>
-        /// <param name="updatedBook">The updated book data.</param>
+        /// <param name="book">The updated book data.</param>
         /// <returns>A NoContent result if successful; otherwise, NotFound or BadRequest.</returns>
-        [HttpPut("{id:length(24)}")]
+        [HttpPut("{id}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> UpdateAsync([FromRoute] string id, [FromBody] Book updatedBook)
+        public async Task<IActionResult> UpdateAsync([FromRoute] string id, [FromBody] Book book)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -184,7 +176,7 @@ namespace CustomCrudApi.Controllers
                 return BadRequest("Book ID cannot be null or empty.");
             }
 
-            if (updatedBook == null)
+            if (book == null)
             {
                 _logger.LogWarning("UpdateAsync called with null book");
                 return BadRequest("Book cannot be null.");
@@ -198,19 +190,16 @@ namespace CustomCrudApi.Controllers
 
             try
             {
-                _logger.LogInformation("Updating book with id: {Id}", id);
+                _logger.LogInformation("Updating book in MySQL with id: {Id}", id);
                 
-                var book = await _bookService.GetAsync(id).ConfigureAwait(false);
-                if (book is null)
+                var success = await _bookMysqlRawService.UpdateAsync(id, book).ConfigureAwait(false);
+                if (!success)
                 {
-                    _logger.LogWarning("Book with id {Id} not found for update", id);
+                    _logger.LogWarning("Book with id {Id} not found for update in MySQL", id);
                     return NotFound();
                 }
-
-                updatedBook.Id = book.Id;
-                await _bookService.UpdateAsync(id, updatedBook).ConfigureAwait(false);
-                
-                _logger.LogInformation("Successfully updated book with id: {Id}", id);
+                    
+                _logger.LogInformation("Successfully updated book in MySQL with id: {Id}", id);
                 return NoContent();
             }
             catch (ArgumentException ex)
@@ -220,15 +209,16 @@ namespace CustomCrudApi.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while updating book with id: {Id}", id);
+                _logger.LogError(ex, "Error occurred while updating book in MySQL with id: {Id}", id);
                 return StatusCode(500, $"Internal server error: {ex.Message}");
-            }
-        }        /// <summary>
-        /// Deletes a book.
+            }        }
+
+        /// <summary>
+        /// Deletes a book from MySQL database.
         /// </summary>
         /// <param name="id">The book identifier.</param>
         /// <returns>A NoContent result if successful; otherwise, NotFound.</returns>
-        [HttpDelete("{id:length(24)}")]
+        [HttpDelete("{id}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -243,18 +233,16 @@ namespace CustomCrudApi.Controllers
 
             try
             {
-                _logger.LogInformation("Deleting book with id: {Id}", id);
+                _logger.LogInformation("Deleting book from MySQL with id: {Id}", id);
                 
-                var book = await _bookService.GetAsync(id).ConfigureAwait(false);
-                if (book is null)
+                var success = await _bookMysqlRawService.RemoveAsync(id).ConfigureAwait(false);
+                if (!success)
                 {
-                    _logger.LogWarning("Book with id {Id} not found for deletion", id);
+                    _logger.LogWarning("Book with id {Id} not found for deletion in MySQL", id);
                     return NotFound();
                 }
-
-                await _bookService.RemoveAsync(id).ConfigureAwait(false);
-                
-                _logger.LogInformation("Successfully deleted book with id: {Id}", id);
+                    
+                _logger.LogInformation("Successfully deleted book from MySQL with id: {Id}", id);
                 return NoContent();
             }
             catch (ArgumentException ex)
@@ -264,7 +252,7 @@ namespace CustomCrudApi.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while deleting book with id: {Id}", id);
+                _logger.LogError(ex, "Error occurred while deleting book from MySQL with id: {Id}", id);
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
